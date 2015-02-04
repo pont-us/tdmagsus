@@ -18,10 +18,10 @@ def read_cur_file(filename):
       filename (str): name of file to read
 
     Returns:
-      ([heating_temps, heating_mag_sus_values],
-       [cooling_temps, cooling_mag_sus_values])
+      ((heating_temps, heating_mag_sus_values],
+       (cooling_temps, cooling_mag_sus_values])
 
-      This is a tuple of two lists, each containing
+      This is a tuple of two tuples, each containing
       two numpy arrays.
     """
 
@@ -46,7 +46,7 @@ def read_cur_file(filename):
     cooling[1].reverse()
     heating = (heating[0][1:], heating[1][1:],)
     cooling = (cooling[0][1:], cooling[1][1:],)
-    return (map(array, heating), map(array, cooling))
+    return (tuple(map(array, heating)), tuple(map(array, cooling)))
     
 class Furnace:
 
@@ -111,12 +111,58 @@ class MeasurementCycle:
         cooling = (cooling[0], self.correct_for_volume(cooling[1]))
         self.data = (heating, cooling)
 
+    @staticmethod
+    def chop_data(temps_mss, min_temp, max_temp):
+        """Truncate data to a given temperature range.
+
+        """
+        temps, mss = temps_mss
+        temps_out = []
+        mss_out = []
+        for i in range(0, len(temps)):
+            temp = temps[i]
+            if temp>=min_temp and temp<=max_temp:
+                temps_out.append(temp)
+                mss_out.append(mss[i])
+        return (array(temps_out), array(mss_out))
+
+    @staticmethod
+    def linear_fit(xs, ys):
+        fit = numpy.polyfit(xs, ys, 1)
+        poly = numpy.poly1d(fit.tolist())
+        model_ys = poly(xs)
+        mean_y = numpy.mean(ys)
+        sserr = numpy.sum((ys - model_ys)**2)
+        sstot = numpy.sum((ys - mean_y)**2)
+        rsquared = 1 - sserr / sstot
+        return poly, rsquared
+
+    def curie_paramag(self, cycle, min_temp, max_temp):
+        """Estimate Curie temperature by linear fit to inverse susceptibility.
+
+        """
+        temps, mss = MeasurementCycle.chop_data(self.cycles[cycle][1], min_temp, max_temp)
+        poly, rsquared = MeasurementCycle.linear_fit(temps, 1./mss)
+        curie = poly.r[0] # x axis intercept
+        return (curie, rsquared, poly)
+
+    def curie_inflection(self, cycle, min_temp, max_temp):
+        """ Estimates a Curie temperature by finding an inflection
+        point on a Hopkinson peak."""
+        all_temps, all_mss = self.cycles[cycle][1]
+        (temps, mss) = MeasurementCycle.chop_data((all_temps, all_mss), min_temp, max_temp)
+        spline = UnivariateSpline(all_temps, all_mss, s=.1)
+        derivs = [ spline.derivatives(t)[2] for t in temps ]
+        spline2 = UnivariateSpline(temps, derivs, s=3)
+        return (spline2.roots()[0], spline)
+
+    def alteration_index(self):
+        """Return alteration index."""
+        return self.heating[1][0] - self.cooling[1][0]
+
     def correct_for_volume(self, data):
         scale = self.nom_vol / self.real_vol
         return [scale * datum for datum in data]
-
-class MeasurementRunSet:
-    """The results of a series of heating-cooling runs on the same sample."""
 
     @staticmethod
     def shunt_up(values):
@@ -125,6 +171,9 @@ class MeasurementRunSet:
         minimum = min(values)
         if (minimum < 0): values = [v - minimum for v in values]
         return values
+
+class MeasurementSet:
+    """The results of a series of heating-cooling cycles on a single sample."""
 
     @staticmethod
     def shunt(heat_cool, offset):
@@ -139,7 +188,7 @@ class MeasurementRunSet:
         offset = -min(self.cycles[700][0][1][-5:])
         new_data = {}
         for temp in self.cycles.keys():
-            new_data[temp] = TdmsData.shunt(self.cycles[temp], offset)
+            new_data[temp] = MeasurementSet.shunt(self.cycles[temp], offset)
         self.cycles = new_data
 
     @staticmethod
@@ -163,7 +212,7 @@ class MeasurementRunSet:
     def read_files(self, sample_dir):
         cur_files = glob.glob(os.path.join(sample_dir, '*.CUR'))
         for filename in cur_files:
-            temperature = TdmsData.filename_to_temp(filename)
+            temperature = MeasurementSet.filename_to_temp(filename)
             if temperature == None: continue
             self.cycles[temperature] = MeasurementCycle(self.furnace, filename, self.real_vol, self.nom_vol)
         # self.make_zero_at_700()
@@ -177,49 +226,5 @@ class MeasurementRunSet:
         self.real_vol = real_vol
         if (sample_dir != None): self.read_files(sample_dir)
 
-    @staticmethod
-    def chop_data(temps_mss, min_temp, max_temp):
-        temps, mss = temps_mss
-        temps_out = []
-        mss_out = []
-        for i in range(0, len(temps)):
-            temp = temps[i]
-            if temp>=min_temp and temp<=max_temp:
-                temps_out.append(temp)
-                mss_out.append(mss[i])
-        return (array(temps_out), array(mss_out))
-
-    @staticmethod
-    def linear_fit(xs, ys):
-        fit = numpy.polyfit(xs, ys, 1)
-        poly = numpy.poly1d(fit.tolist())
-        model_ys = poly(xs)
-        mean_y = numpy.mean(ys)
-        sserr = numpy.sum((ys - model_ys)**2)
-        sstot = numpy.sum((ys - mean_y)**2)
-        rsquared = 1 - sserr / sstot
-        return poly, rsquared
-
-    def curie_paramag(self, cycle, min_temp, max_temp):
-        ''' Estimates a Curie temperature by linear fit to 
-        inverse susceptibility over a given range.'''
-        (temps, mss) = TdmsData.chop_data(self.cycles[cycle][1], min_temp, max_temp)
-        poly, rsquared = TdmsData.linear_fit(temps, 1./mss)
-        curie = poly.r[0] # x axis intercept
-        return (curie, rsquared, poly)
-
-    def curie_inflection(self, cycle, min_temp, max_temp):
-        ''' Estimates a Curie temperature by finding an inflection
-        point on a Hopkinson peak.'''
-        all_temps, all_mss = self.cycles[cycle][1]
-        (temps, mss) = TdmsData.chop_data((all_temps, all_mss), min_temp, max_temp)
-        spline = UnivariateSpline(all_temps, all_mss, s=.1)
-        derivs = [ spline.derivatives(t)[2] for t in temps ]
-        spline2 = UnivariateSpline(temps, derivs, s=3)
-        return (spline2.roots()[0], spline)
-
-    def alteration(self, cycle):
-        return self.cycles[cycle][1][1][0] -  self.cycles[cycle][0][1][0]
-
     def alterations(self, cycles):
-        return [self.alteration(cycle) for cycle in cycles]
+        return [cycle.alteration() for cycle in cycles]
