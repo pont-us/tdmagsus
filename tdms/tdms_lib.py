@@ -1,5 +1,17 @@
 #!/usr/bin/python3
 
+"""
+Tools for working with temperature-dependent magnetic susceptibility data.
+
+This module contains classes for processing temperature-dependent magnetic
+susceptibility data from AGICO kappabridges. It reads the CUR data
+files produced by the kappabridge software and provides the ability to
+subtract an empty furnace measurement (smoothed with a spline) from
+sample measurements in order to provide a corrected measurement of the
+susceptibility of the sample itself.
+
+"""
+
 import sys, glob, re
 import numpy
 from numpy import array
@@ -12,7 +24,7 @@ field_separator = re.compile(' +')
 # TODO: fix splines at endpoints
 
 def read_cur_file(filename):
-    """Read a .CUR magnetic susceptibility file
+    """Read a .CUR magnetic susceptibility file.
 
     Args:
       filename (str): name of file to read
@@ -52,6 +64,18 @@ class Furnace:
 
     @staticmethod
     def extend_data(temps_mss):
+        """Pad data at ends to improve spline fit.
+
+        Given ([T1, T2, T3, ... , Tn-1, Tn], [M1, M2, M3, ... , Mn-1, Mn]),
+        produces ([T1-20, T1-10, T1, T2, T3, ... , Tn-1, Tn, Tn+10, Tn+20],
+                  [M1, M1, M1, M2, M3, ... , Mn-1, Mn, Mn, Mn]).
+
+        Args:
+          temps_mss: tuple of temperatures and mag sus values
+
+        Returns:
+          same values, padded by two extra data points at each end
+        """
         temps, mss = temps_mss
         tlist = temps.tolist()
         mlist = mss.tolist()
@@ -62,6 +86,12 @@ class Furnace:
         return (array(tlist), array(mlist))
 
     def __init__(self, filename, smoothing = 100):
+        """Initialize Furnace object from a CUR file.
+
+        Args:
+          filename: file path from which to read furnace data
+          smoothing: smoothing factor for spline curve
+        """
         heat, cool = read_cur_file(filename)
         self.heat_data, self.cool_data = map(Furnace.extend_data, (heat, cool))
         self.heat_spline = UnivariateSpline(*self.heat_data, s = smoothing)
@@ -137,11 +167,23 @@ class MeasurementCycle:
         rsquared = 1 - sserr / sstot
         return poly, rsquared
 
-    def curie_paramag(self, cycle, min_temp, max_temp):
+    def curie_paramag(self, min_temp, max_temp):
         """Estimate Curie temperature by linear fit to inverse susceptibility.
 
+        Args:
+          min_temp: minimum of temperature range for fit
+          min_temp: maximum of temperature range for fit
+
+        Return:
+          (curie, rsquared, poly)
+          curie: estimated Curie temperature
+          rsquared: R² value for fit
+          poly: polynomial object representing line of best fit
         """
-        temps, mss = MeasurementCycle.chop_data(self.cycles[cycle][1], min_temp, max_temp)
+
+        # Original version used cooling rather than heating curve, but
+        # heating curve probably makes more sense.
+        temps, mss = MeasurementCycle.chop_data(self.data[0], min_temp, max_temp)
         poly, rsquared = MeasurementCycle.linear_fit(temps, 1./mss)
         curie = poly.r[0] # x axis intercept
         return (curie, rsquared, poly)
