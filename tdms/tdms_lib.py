@@ -61,24 +61,39 @@ class Furnace:
             mlist + [mlist[-1]] + [mlist[-1]]
         return (array(tlist), array(mlist))
 
-    def __init__(self, filename):
+    def __init__(self, filename, smoothing = 100):
         heat, cool = read_cur_file(filename)
-        (self.heat_data, self.cool_data) = \
-            map(Furnace.extend_data, (heat, cool))
-        self.heat_spline = UnivariateSpline(*self.heat_data, s = 5)
-        self.cool_spline = UnivariateSpline(*self.cool_data, s = 5)
+        self.heat_data, self.cool_data = map(Furnace.extend_data, (heat, cool))
+        self.heat_spline = UnivariateSpline(*self.heat_data, s = smoothing)
+        self.cool_spline = UnivariateSpline(*self.cool_data, s = smoothing)
+
+    def get_spline_data(self):
+        """Return furnace temperature/M.S. data and spline approximations.
+
+        This method is mainly intended for checking that the splines are
+        doing a good job of smoothing the data.
+
+        Returns:
+           (heating_data, heating_spline, cooling_data, cooling_spline)
+           Each element of this tuple is itself a 2-tuple containing a 
+           list of temperatures and a list of associated M.S. values."""
+
+        splinex = numpy.arange(20, 701)
+        spliney_heat = self.heat_spline(splinex)
+        spliney_cool = self.cool_spline(splinex)
+        return self.heat_data, (splinex, spliney_heat),\
+            self.cool_data, (splinex, spliney_cool)    
 
     @staticmethod
-    def correct_with_spline(temps_mss, spline):
-        temps, mss = temps_mss
+    def correct_with_spline(temps, mss, spline):
         mss_corrected = numpy.zeros_like(mss)
         for i in range(0, len(temps)):
             mss_corrected[i] = mss[i] - spline(temps[i])
         return (temps, mss_corrected)
 
     def correct(self, heating, cooling):
-        return (Furnace.correct_with_spline(heating, self.heat_spline),
-                Furnace.correct_with_spline(cooling, self.cool_spline))
+        return (Furnace.correct_with_spline(heating[0], heating[1], self.heat_spline),
+                Furnace.correct_with_spline(cooling[0], cooling[1], self.cool_spline))
 
 class MeasurementCycle:
     """The results of a single heating-cooling run."""
