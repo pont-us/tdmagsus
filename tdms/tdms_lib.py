@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys, glob, re
 import numpy
@@ -51,7 +51,8 @@ def read_cur_file(filename):
 class Furnace:
 
     @staticmethod
-    def extend_data((temps, mss)):
+    def extend_data(temps_mss):
+        temps, mss = temps_mss
         tlist = temps.tolist()
         mlist = mss.tolist()
         tlist = [(tlist[0] - 20)] + [(tlist[0] - 10)] + \
@@ -68,7 +69,8 @@ class Furnace:
         self.cool_spline = UnivariateSpline(*self.cool_data, s = 5)
 
     @staticmethod
-    def correct_with_spline((temps, mss), spline):
+    def correct_with_spline(temps_mss, spline):
+        temps, mss = temps_mss
         mss_corrected = numpy.zeros_like(mss)
         for i in range(0, len(temps)):
             mss_corrected[i] = mss[i] - spline(temps[i])
@@ -110,14 +112,15 @@ class MeasurementRunSet:
         return values
 
     @staticmethod
-    def shunt((heat, cool), offset):
+    def shunt(heat_cool, offset):
+        heat, cool = heat_cool
         heat_s = (heat[0], [m + offset for m in heat[1]])
         cool_s = (cool[0], [m + offset for m in cool[1]])
         return (heat_s, cool_s)
 
     def make_zero_at_700(self):
         'Correct values for a zero susceptibility at/near 700 degrees'
-        print self.name, self.cycles.keys(), self.cycles[700][0][1][:5]
+        print(self.name, self.cycles.keys(), self.cycles[700][0][1][:5])
         offset = -min(self.cycles[700][0][1][-5:])
         new_data = {}
         for temp in self.cycles.keys():
@@ -160,7 +163,8 @@ class MeasurementRunSet:
         if (sample_dir != None): self.read_files(sample_dir)
 
     @staticmethod
-    def chop_data((temps, mss), min_temp, max_temp):
+    def chop_data(temps_mss, min_temp, max_temp):
+        temps, mss = temps_mss
         temps_out = []
         mss_out = []
         for i in range(0, len(temps)):
