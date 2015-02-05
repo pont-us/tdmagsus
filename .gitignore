@@ -1,3 +1,4 @@
 *~
 *.pyc
-tdms.egg-info
+tdmagsus.egg-info
+__pycache__
