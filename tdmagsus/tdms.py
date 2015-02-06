@@ -21,8 +21,6 @@ import os.path
 line_pattern = re.compile(r'^ +\d')
 field_separator = re.compile(' +')
 
-# TODO: fix splines at endpoints
-
 def read_cur_file(filename):
     """Read a .CUR magnetic susceptibility file.
 
@@ -141,6 +139,21 @@ class MeasurementCycle:
         cooling = (cooling[0], self.correct_for_volume(cooling[1]))
         self.data = (heating, cooling)
 
+    def write_csv(self, filename):
+        """Write furnace-corrected data to a CSV file.
+
+        Args:
+          filename (str): name of file to write to.
+        """
+
+        cooling = (list(reversed(self.data[1][0])),
+                   list(reversed(self.data[1][1])))
+        with open(filename, "w") as fh:
+            for direction in self.data[0], cooling:
+                pairs = zip(direction[0], direction[1])
+                for pair in pairs:
+                    fh.write("%.2f,%.2f\n" % (pair[0], pair[1]))
+
     @staticmethod
     def chop_data(temps_mss, min_temp, max_temp):
         """Truncate data to a given temperature range.
@@ -181,21 +194,45 @@ class MeasurementCycle:
           poly: polynomial object representing line of best fit
         """
 
-        # Original version used cooling rather than heating curve, but
-        # heating curve probably makes more sense.
         temps, mss = MeasurementCycle.chop_data(self.data[0], min_temp, max_temp)
         poly, rsquared = MeasurementCycle.linear_fit(temps, 1./mss)
         curie = poly.r[0] # x axis intercept
         return (curie, rsquared, poly)
 
-    def curie_inflection(self, cycle, min_temp, max_temp):
-        """ Estimates a Curie temperature by finding an inflection
-        point on a Hopkinson peak."""
-        all_temps, all_mss = self.cycles[cycle][1]
-        (temps, mss) = MeasurementCycle.chop_data((all_temps, all_mss), min_temp, max_temp)
-        spline = UnivariateSpline(all_temps, all_mss, s=.1)
+    def curie_inflection(self, min_temp, max_temp):
+        """ Estimate Curie temperature by inflection point.
+
+        Estimate Curie point by determining the inflection point of 
+        the curve segment starting at the Hopkinson peak. The curve
+        segment must be specified.
+
+        Args:
+          min_temp: start of curve segment
+          max_temp: end of curve segment
+
+        Result:
+          (temp, spline)
+          temp is the estimated Curie temperature
+          spline is the scipy.interpolate.UnivariateSpline used to fit
+            the data and determine the inflection point
+        """
+
+        # Fit a cubic spline to the data. Using the whole dataset gives
+        # a better approximation at the endpoints of the selected range.
+        spline = UnivariateSpline(self.data[0][0], self.data[0][1], s=.1)
+
+        # Get the data points which lie within the selected range.
+        temps, _ = MeasurementCycle.chop_data(self.data[0], min_temp, max_temp)
+
+        # Evaluate the second derivative of the spline at each selected
+        # temperature step.
         derivs = [ spline.derivatives(t)[2] for t in temps ]
+
+        # Fit a new spline to the derivatives in order to calculate the
+        # inflection point.
         spline2 = UnivariateSpline(temps, derivs, s=3)
+
+        # The root of the 2nd-derivative spline gives the inflection point.
         return (spline2.roots()[0], spline)
 
     def alteration_index(self):
@@ -208,7 +245,18 @@ class MeasurementCycle:
 
     @staticmethod
     def shunt_up(values):
-        'Move values up to ensure all >=0'
+        """Ensure that a list of scalars is non-negative.
+
+        If min(values)<0, return values - min(values),
+        otherwise return values.
+
+        Args:
+          values (list): magnetic suscepetibility values
+
+        Returns:
+          values, incremented by a constant 
+
+        """
         if len(values)==0: return values
         minimum = min(values)
         if (minimum < 0): values = [v - minimum for v in values]
