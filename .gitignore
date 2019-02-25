@@ -2,3 +2,6 @@
 *.pyc
 tdmagsus.egg-info
 __pycache__
+.idea/workspace.xml
+.idea/usage.statistics.xml
+.idea/tasks.xml
