@@ -12,14 +12,17 @@ susceptibility of the sample itself.
 
 """
 
-import sys, glob, re
+import glob
+import os.path
+import re
+
 import numpy
 from numpy import array
 from scipy.interpolate import UnivariateSpline
-import os.path
 
 line_pattern = re.compile(r'^ +\d')
 field_separator = re.compile(' +')
+
 
 def read_cur_file(filename):
     """Read a .CUR magnetic susceptibility file.
@@ -36,8 +39,8 @@ def read_cur_file(filename):
     """
 
     infile = open(filename, 'r')
-    heating = ([],[])
-    cooling = ([],[])
+    heating = ([], [])
+    cooling = ([], [])
     current = heating
     cool = False
     prev_temp = -300
@@ -56,8 +59,9 @@ def read_cur_file(filename):
     cooling[1].reverse()
     heating = (heating[0][1:], heating[1][1:],)
     cooling = (cooling[0][1:], cooling[1][1:],)
-    return (tuple(map(array, heating)), tuple(map(array, cooling)))
-    
+    return tuple(map(array, heating)), tuple(map(array, cooling))
+
+
 class Furnace:
 
     @staticmethod
@@ -81,9 +85,9 @@ class Furnace:
             tlist + [tlist[-1] + 10] + [tlist[-1] + 20]
         mlist = [mlist[0]] + [mlist[0]] + \
             mlist + [mlist[-1]] + [mlist[-1]]
-        return (array(tlist), array(mlist))
+        return array(tlist), array(mlist)
 
-    def __init__(self, filename, smoothing = 100):
+    def __init__(self, filename, smoothing=100):
         """Initialize Furnace object from a CUR file.
 
         Args:
@@ -92,8 +96,8 @@ class Furnace:
         """
         heat, cool = read_cur_file(filename)
         self.heat_data, self.cool_data = map(Furnace.extend_data, (heat, cool))
-        self.heat_spline = UnivariateSpline(*self.heat_data, s = smoothing)
-        self.cool_spline = UnivariateSpline(*self.cool_data, s = smoothing)
+        self.heat_spline = UnivariateSpline(*self.heat_data, s=smoothing)
+        self.cool_spline = UnivariateSpline(*self.cool_data, s=smoothing)
 
     def get_spline_data(self):
         """Return furnace temperature/M.S. data and spline approximations.
@@ -117,11 +121,14 @@ class Furnace:
         mss_corrected = numpy.zeros_like(mss)
         for i in range(0, len(temps)):
             mss_corrected[i] = mss[i] - spline(temps[i])
-        return (temps, mss_corrected)
+        return temps, mss_corrected
 
     def correct(self, heating, cooling):
-        return (Furnace.correct_with_spline(heating[0], heating[1], self.heat_spline),
-                Furnace.correct_with_spline(cooling[0], cooling[1], self.cool_spline))
+        return (Furnace.correct_with_spline(heating[0], heating[1],
+                                            self.heat_spline),
+                Furnace.correct_with_spline(cooling[0], cooling[1],
+                                            self.cool_spline))
+
 
 class MeasurementCycle:
     """The results of a single heating-cooling run."""
@@ -131,10 +138,10 @@ class MeasurementCycle:
         self.real_vol = real_vol
         self.nom_vol = nom_vol
         (heating, cooling) = read_cur_file(filename)
-        if self.furnace != None:
+        if self.furnace is not None:
             heating, cooling = self.furnace.correct(heating, cooling)
-        #heating = (heating[0], TdmsData.shunt_up(heating[1]))
-        #cooling = (cooling[0], TdmsData.shunt_up(cooling[1]))
+        # heating = (heating[0], TdmsData.shunt_up(heating[1]))
+        # cooling = (cooling[0], TdmsData.shunt_up(cooling[1]))
         heating = (heating[0], self.correct_for_volume(heating[1]))
         cooling = (cooling[0], self.correct_for_volume(cooling[1]))
         self.data = (heating, cooling)
@@ -164,10 +171,10 @@ class MeasurementCycle:
         mss_out = []
         for i in range(0, len(temps)):
             temp = temps[i]
-            if temp>=min_temp and temp<=max_temp:
+            if min_temp <= temp <= max_temp:
                 temps_out.append(temp)
                 mss_out.append(mss[i])
-        return (array(temps_out), array(mss_out))
+        return array(temps_out), array(mss_out)
 
     @staticmethod
     def linear_fit(xs, ys):
@@ -185,7 +192,7 @@ class MeasurementCycle:
 
         Args:
           min_temp: minimum of temperature range for fit
-          min_temp: maximum of temperature range for fit
+          max_temp: maximum of temperature range for fit
 
         Return:
           (curie, rsquared, poly)
@@ -194,13 +201,14 @@ class MeasurementCycle:
           poly: polynomial object representing line of best fit
         """
 
-        temps, mss = MeasurementCycle.chop_data(self.data[0], min_temp, max_temp)
+        temps, mss = \
+            MeasurementCycle.chop_data(self.data[0], min_temp, max_temp)
         poly, rsquared = MeasurementCycle.linear_fit(temps, 1./mss)
-        curie = poly.r[0] # x axis intercept
-        return (curie, rsquared, poly)
+        curie = poly.r[0]  # x axis intercept
+        return curie, rsquared, poly
 
     def curie_inflection(self, min_temp, max_temp):
-        """ Estimate Curie temperature by inflection point.
+        """Estimate Curie temperature by inflection point.
 
         Estimate Curie point by determining the inflection point of 
         the curve segment starting at the Hopkinson peak. The curve
@@ -226,14 +234,14 @@ class MeasurementCycle:
 
         # Evaluate the second derivative of the spline at each selected
         # temperature step.
-        derivs = [ spline.derivatives(t)[2] for t in temps ]
+        derivs = [spline.derivatives(t)[2] for t in temps]
 
         # Fit a new spline to the derivatives in order to calculate the
         # inflection point.
         spline2 = UnivariateSpline(temps, derivs, s=3)
 
         # The root of the 2nd-derivative spline gives the inflection point.
-        return (spline2.roots()[0], spline)
+        return spline2.roots()[0], spline
 
     def alteration_index(self):
         """Return alteration index."""
@@ -257,10 +265,13 @@ class MeasurementCycle:
           values, incremented by a constant 
 
         """
-        if len(values)==0: return values
+        if len(values) == 0:
+            return values
         minimum = min(values)
-        if (minimum < 0): values = [v - minimum for v in values]
+        if minimum < 0:
+            values = [v - minimum for v in values]
         return values
+
 
 class MeasurementSet:
     """The results of a series of heating-cooling cycles on a single sample."""
@@ -270,10 +281,10 @@ class MeasurementSet:
         heat, cool = heat_cool
         heat_s = (heat[0], [m + offset for m in heat[1]])
         cool_s = (cool[0], [m + offset for m in cool[1]])
-        return (heat_s, cool_s)
+        return heat_s, cool_s
 
     def make_zero_at_700(self):
-        'Correct values for a zero susceptibility at/near 700 degrees'
+        """Correct values for a zero susceptibility at/near 700 degrees"""
         print(self.name, self.cycles.keys(), self.cycles[700][0][1][:5])
         offset = -min(self.cycles[700][0][1][-5:])
         new_data = {}
@@ -283,14 +294,15 @@ class MeasurementSet:
 
     @staticmethod
     def filename_to_temp(filename):
-        'Convert a filename to a temperature'
+        """Convert a filename to a temperature"""
         leafname = os.path.basename(filename)
         m = re.search(r'^(\d+)[AB]?\.CUR$', leafname)
-        if m==None: return None
+        if m is None:
+            return None
         return int(m.group(1))
 
     def set_oom(self, new_oom):
-        scale = 10. **(self.oom - new_oom)
+        scale = 10. ** (self.oom - new_oom)
         new_data = {}
         for (temp, (heating, cooling)) in self.cycles.items():
             heating2 = (heating[0], [ms*scale for ms in heating[1]])
@@ -300,21 +312,25 @@ class MeasurementSet:
         self.oom = new_oom
 
     def read_files(self, sample_dir):
-        cur_files = glob.glob(os.path.join(sample_dir, '*.CUR'))
+        cur_files = glob.glob(os.path.join(sample_dir, "*.CUR"))
         for filename in cur_files:
             temperature = MeasurementSet.filename_to_temp(filename)
-            if temperature == None: continue
-            self.cycles[temperature] = MeasurementCycle(self.furnace, filename, self.real_vol, self.nom_vol)
+            if temperature is None:
+                continue
+            self.cycles[temperature] = MeasurementCycle(
+                self.furnace, filename, self.real_vol, self.nom_vol)
         # self.make_zero_at_700()
 
-    def __init__(self, furnace, sample_dir, real_vol=0.25, nom_vol = 10.):
-        self.oom = -6. # order of magnitude
+    def __init__(self, furnace, sample_dir, real_vol=0.25, nom_vol=10.):
+        self.oom = -6.  # order of magnitude
         self.name = os.path.basename(sample_dir)
         self.furnace = furnace
         self.cycles = {}
         self.nom_vol = nom_vol
         self.real_vol = real_vol
-        if (sample_dir != None): self.read_files(sample_dir)
+        if sample_dir is not None:
+            self.read_files(sample_dir)
 
-    def alterations(self, cycles):
+    @staticmethod
+    def alterations(cycles):
         return [cycle.alteration() for cycle in cycles]

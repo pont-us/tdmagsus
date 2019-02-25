@@ -1,1 +1,1 @@
-all = ["tdms_lib"]
+all = ["tdms"]
