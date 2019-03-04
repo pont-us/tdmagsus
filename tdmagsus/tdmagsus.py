@@ -260,7 +260,7 @@ class MeasurementCycle:
 
     def alteration_index(self):
         """Return alteration index."""
-        return self.heating[1][0] - self.cooling[1][0]
+        return self.data[0][1][0] - self.data[1][1][0]
 
     def correct_for_volume(self, data):
         scale = self.nom_vol / self.real_vol

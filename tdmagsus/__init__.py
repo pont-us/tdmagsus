@@ -1,1 +1,1 @@
-all = ["tdms"]
+from .tdmagsus import *
