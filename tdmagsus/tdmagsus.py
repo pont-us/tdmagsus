@@ -15,8 +15,7 @@
 # You should have received a copy of the GNU General Public License along
 # with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Tools for working with temperature-dependent magnetic susceptibility data.
+"""Tools for working with temperature-dependent magnetic susceptibility data.
 
 This module contains classes for processing temperature-dependent magnetic
 susceptibility data from AGICO kappabridges. It reads the CUR data
@@ -24,7 +23,6 @@ files produced by the kappabridge software and provides the ability to
 subtract an empty furnace measurement (smoothed with a spline) from
 sample measurements in order to provide a corrected measurement of the
 susceptibility of the sample itself.
-
 """
 
 import glob
@@ -42,15 +40,11 @@ field_separator = re.compile(' +')
 def read_cur_file(filename):
     """Read a .CUR magnetic susceptibility file.
 
-    Args:
-      filename (str): name of file to read
-
-    Returns:
-      ((heating_temps, heating_mag_sus_values],
+    :param filename: name of file to read
+    :type filename: str
+    :return: ((heating_temps, heating_mag_sus_values],
        (cooling_temps, cooling_mag_sus_values])
-
-      This is a tuple of two tuples, each containing
-      two numpy arrays.
+      This is a tuple of two tuples, each containing two numpy arrays.
     """
 
     infile = open(filename, 'r')
@@ -78,6 +72,12 @@ def read_cur_file(filename):
 
 
 class Furnace:
+    """The temperature-susceptibility behaviour of an empty furnace.
+
+    This class represents the susceptibility of an empty furnace during a
+    heating-cooling cycle. It is used to correct the measured susceptibility
+    of a sample by substracting the furnace's susceptibility.
+    """
 
     @staticmethod
     def extend_data(temps_mss):
@@ -87,11 +87,9 @@ class Furnace:
         produces ([T1-20, T1-10, T1, T2, T3, ... , Tn-1, Tn, Tn+10, Tn+20],
                   [M1, M1, M1, M2, M3, ... , Mn-1, Mn, Mn, Mn]).
 
-        Args:
-          temps_mss: tuple of temperatures and mag sus values
+        :param temps_mss: tuple of temperatures and mag sus values
+        :return: same values, padded by two extra data points at each end
 
-        Returns:
-          same values, padded by two extra data points at each end
         """
         temps, mss = temps_mss
         tlist = temps.tolist()
@@ -105,9 +103,8 @@ class Furnace:
     def __init__(self, filename, smoothing=100):
         """Initialize Furnace object from a CUR file.
 
-        Args:
-          filename: file path from which to read furnace data
-          smoothing: smoothing factor for spline curve
+        :param filename: file path from which to read furnace data
+        :param smoothing: smoothing factor for spline curve
         """
         heat, cool = read_cur_file(filename)
         self.heat_data, self.cool_data = map(Furnace.extend_data, (heat, cool))
@@ -116,14 +113,14 @@ class Furnace:
 
     def get_spline_data(self):
         """Return furnace temperature/M.S. data and spline approximations.
-
+        
         This method is mainly intended for checking that the splines are
         doing a good job of smoothing the data.
 
-        Returns:
-           (heating_data, heating_spline, cooling_data, cooling_spline)
-           Each element of this tuple is itself a 2-tuple containing a 
-           list of temperatures and a list of associated M.S. values."""
+        :return: (heating_data, heating_spline, cooling_data, cooling_spline).
+           Each element of this tuple is itself a 2-tuple containing a
+           list of temperatures and a list of associated M.S. values.
+        """
 
         splinex = numpy.arange(20, 701)
         spliney_heat = self.heat_spline(splinex)
@@ -133,12 +130,32 @@ class Furnace:
 
     @staticmethod
     def correct_with_spline(temps, mss, spline):
+        """Correct susceptibility measurements using a supplied spline.
+
+        :param temps: an array_like of temperatures
+        :param mss: an array_like of magnetic susceptibility measurement
+                    taken at the specified temperatures
+        :param spline: a function mapping a temperature to a furnace
+                       susceptibility
+        :return: a 2-tuple containing temps and a corresponding series of
+                 corrected susceptibilities
+        """
         mss_corrected = numpy.zeros_like(mss)
         for i in range(0, len(temps)):
             mss_corrected[i] = mss[i] - spline(temps[i])
         return temps, mss_corrected
 
     def correct(self, heating, cooling):
+        """Correct susceptibility measurements using these furnace measurements
+
+        :param heating: a 2-tuple (temperatures, susceptibilities) of
+                        array_likes for the heating measurements
+        :param cooling: a 2-tuple (temperatures, susceptibilities) of
+                        array_likes for the cooling measurements
+        :return: a 2-tuple of 2-tuples giving the corrected measurements:
+                 ((heating_temperatures, heating_susceptibilities),
+                  (cooling_temperatures, cooling_susceptibilities))
+        """
         return (Furnace.correct_with_spline(heating[0], heating[1],
                                             self.heat_spline),
                 Furnace.correct_with_spline(cooling[0], cooling[1],
@@ -164,8 +181,8 @@ class MeasurementCycle:
     def write_csv(self, filename):
         """Write furnace-corrected data to a CSV file.
 
-        Args:
-          filename (str): name of file to write to.
+        :param filename: name of file to write to.
+        :type filename: str
         """
 
         cooling = (list(reversed(self.data[1][0])),
@@ -180,6 +197,11 @@ class MeasurementCycle:
     def chop_data(temps_mss, min_temp, max_temp):
         """Truncate data to a given temperature range.
 
+        :param temps_mss: a 2-tuple of lists, (temperatures, susceptibilites)
+        :param min_temp: minimum temperature for truncation
+        :param max_temp: maximum remperature for truncation
+        :return: a 2-tuple of lists, (temperatures, susceptibilities), where
+                 all temperatures are in the range (min_temp, max_temp)
         """
         temps, mss = temps_mss
         temps_out = []
@@ -193,6 +215,15 @@ class MeasurementCycle:
 
     @staticmethod
     def linear_fit(xs, ys):
+        """Make a least-squares linear fit to a 2-dimensional data set.
+
+        This method also calculates and returns the r-squared value associated
+        with the fit.
+
+        :param xs: x co-ordinates
+        :param ys: y co-ordinates
+        :return: a tuple of (numpy.poly1d, r_squared)
+        """
         fit = numpy.polyfit(xs, ys, 1)
         poly = numpy.poly1d(fit.tolist())
         model_ys = poly(xs)
@@ -205,15 +236,12 @@ class MeasurementCycle:
     def curie_paramag(self, min_temp, max_temp):
         """Estimate Curie temperature by linear fit to inverse susceptibility.
 
-        Args:
-          min_temp: minimum of temperature range for fit
-          max_temp: maximum of temperature range for fit
-
-        Return:
-          (curie, rsquared, poly)
-          curie: estimated Curie temperature
-          rsquared: R² value for fit
-          poly: polynomial object representing line of best fit
+        :param min_temp: minimum of temperature range for fit
+        :param max_temp: maximum of temperature range for fit
+        :return: (curie, rsquared, poly) where
+          curie is estimated Curie temperature;
+          rsquared is R² value for fit;
+          poly is polynomial object representing line of best fit.
         """
 
         temps, mss = \
@@ -224,18 +252,15 @@ class MeasurementCycle:
 
     def curie_inflection(self, min_temp, max_temp):
         """Estimate Curie temperature by inflection point.
-
-        Estimate Curie point by determining the inflection point of 
+        
+        Estimate Curie point by determining the inflection point of
         the curve segment starting at the Hopkinson peak. The curve
         segment must be specified.
 
-        Args:
-          min_temp: start of curve segment
-          max_temp: end of curve segment
-
-        Result:
-          (temp, spline)
-          temp is the estimated Curie temperature
+        :param min_temp: start of curve segment
+        :param max_temp: end of curve segment
+        :return: (temp, spline) where
+          temp is the estimated Curie temperature;
           spline is the scipy.interpolate.UnivariateSpline used to fit
             the data and determine the inflection point
         """
@@ -259,26 +284,35 @@ class MeasurementCycle:
         return spline2.roots()[0], spline
 
     def alteration_index(self):
-        """Return alteration index."""
+        """Return the alteration index for this cycle.
+
+        :return: the alteration idex for this cycle
+        """
         return self.data[0][1][0] - self.data[1][1][0]
 
     def correct_for_volume(self, data):
+        """Correct supplied data for volume.
+
+        The volume correction factor is (nominal_volume / real_volume). The
+        values are set by the constructor.
+
+        :param data: a list of numerical data to correct
+        :return: a list containing the supplied data scaled by the
+                 volume correction factor
+        """
         scale = self.nom_vol / self.real_vol
         return [scale * datum for datum in data]
 
     @staticmethod
     def shunt_up(values):
         """Ensure that a list of scalars is non-negative.
-
+        
         If min(values)<0, return values - min(values),
         otherwise return values.
 
-        Args:
-          values (list): magnetic suscepetibility values
-
-        Returns:
-          values, incremented by a constant 
-
+        :param values: magnetic suscepetibility values
+        :type values: list
+        :return: values, incremented by a constant
         """
         if len(values) == 0:
             return values
@@ -293,6 +327,14 @@ class MeasurementSet:
 
     @staticmethod
     def shunt(heat_cool, offset):
+        """Offset all magnetic susceptibility values by a supplied value.
+
+        :param heat_cool: ((heating_temps, heating_susceptibilities),
+                           (cooling_temps, cooling_susceptibilities))
+        :param offset: amount to add to or subtract from each susceptibility
+        :return: a tuple of tuples like heat_cool, but with susceptibilies
+                 offset
+        """
         heat, cool = heat_cool
         heat_s = (heat[0], [m + offset for m in heat[1]])
         cool_s = (cool[0], [m + offset for m in cool[1]])
@@ -309,7 +351,15 @@ class MeasurementSet:
 
     @staticmethod
     def filename_to_temp(filename):
-        """Convert a filename to a temperature"""
+        """Convert a filename to a temperature.
+
+        Extracts a temperature from a numeric filename with a .CUR suffix.
+        The temperature may also be suffixed by A or B.
+        e.g. "700.CUR" -> 700, "350B.CUR" -> 350
+
+        :param filename: a filename containing a temperature
+        :return: the temperature represented by the filename
+        """
         leafname = os.path.basename(filename)
         m = re.search(r'^(\d+)[AB]?\.CUR$', leafname)
         if m is None:
@@ -317,6 +367,10 @@ class MeasurementSet:
         return int(m.group(1))
 
     def set_oom(self, new_oom):
+        """Change this measurement set's order of magnitude.
+
+        :param new_oom: the new order of magnitude
+        """
         scale = 10. ** (self.oom - new_oom)
         new_data = {}
         for (temp, (heating, cooling)) in self.cycles.items():
@@ -327,6 +381,10 @@ class MeasurementSet:
         self.oom = new_oom
 
     def read_files(self, sample_dir):
+        """Read a directory of files into this measurement set.
+
+        :param sample_dir: directory containing CUR files
+        """
         cur_files = glob.glob(os.path.join(sample_dir, "*.CUR"))
         for filename in cur_files:
             temperature = MeasurementSet.filename_to_temp(filename)
@@ -348,4 +406,9 @@ class MeasurementSet:
 
     @staticmethod
     def alterations(cycles):
-        return [cycle.alteration() for cycle in cycles]
+        """Calculate alteration indices for a list of cycles
+
+        :param cycles: a list of MeasurementCycles
+        :return: a corresponding list of alteration indices
+        """
+        return [cycle.alteration_index() for cycle in cycles]
