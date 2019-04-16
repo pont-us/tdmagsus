@@ -2,8 +2,8 @@ tdmagsus: tools for thermomagnetic susceptibility analysis
 ==========================================================
 
 This is a small library for working with temperature-dependent magnetic
-susceptibility data measured on an AGICO kappabridge (e.g. Agico, 2003;
-Agico, 2009).
+susceptibility data measured on AGICO kappabridges from the KLY and MFK
+series (e.g. Agico, 2003; Agico, 2009).
 
 Overview
 --------
