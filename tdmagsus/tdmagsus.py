@@ -47,23 +47,27 @@ def read_cur_file(filename):
       This is a tuple of two tuples, each containing two numpy arrays.
     """
 
-    infile = open(filename, 'r')
-    heating = ([], [])
-    cooling = ([], [])
-    current = heating
-    cool = False
-    prev_temp = -300
-    for line in infile:
-        if line_pattern.match(line.rstrip()):
-            temperature, mag_sus = \
-                map(float, field_separator.split(line.lstrip())[0:2])
-            if temperature < prev_temp - 0.5 and not cool:
-                current = cooling
-                cool = True
-            current[0].append(temperature)
-            current[1].append(mag_sus)
-            prev_temp = temperature
-    infile.close()
+    temperatures = []
+    mag_suss = []
+    with open(filename, 'r') as infile:
+        for line in infile:
+            if line_pattern.match(line.rstrip()):
+                temperature, mag_sus = \
+                    map(float, field_separator.split(line.lstrip())[0:2])
+                temperatures.append(temperature)
+                mag_suss.append(mag_sus)
+
+    # Looking for the first temperature decrease is an unreliable way to find
+    # the start of the cooling curve: it's not guaranteed that the heating
+    # curve will be monotonically increasing, especially around 100°C where
+    # evaporation from a moist sample can cause a brief drop in temperature.
+    # Instead we split at the maximum of the entire temperature series.
+    split_at = temperatures.index(max(temperatures))
+    # The maximum temperature is duplicated: it's the last step in the
+    # heating array, and also the first step in the cooling array.
+    heating = (temperatures[:(split_at + 1)], mag_suss[:(split_at + 1)])
+    cooling = (temperatures[split_at:], mag_suss[split_at:])
+
     cooling[0].reverse()
     cooling[1].reverse()
     heating = (heating[0][1:], heating[1][1:],)
@@ -165,15 +169,13 @@ class Furnace:
 class MeasurementCycle:
     """The results of a single heating-cooling run."""
 
-    def __init__(self, furnace, filename, real_vol, nom_vol):
+    def __init__(self, furnace, filename, real_vol=0.25, nom_vol=10.0):
         self.furnace = furnace
         self.real_vol = real_vol
         self.nom_vol = nom_vol
         (heating, cooling) = read_cur_file(filename)
         if self.furnace is not None:
             heating, cooling = self.furnace.correct(heating, cooling)
-        # heating = (heating[0], TdmsData.shunt_up(heating[1]))
-        # cooling = (cooling[0], TdmsData.shunt_up(cooling[1]))
         heating = (heating[0], self.correct_for_volume(heating[1]))
         cooling = (cooling[0], self.correct_for_volume(cooling[1]))
         self.data = (heating, cooling)
@@ -307,7 +309,7 @@ class MeasurementCycle:
     def shunt_up(values):
         """Ensure that a list of scalars is non-negative.
         
-        If min(values)<0, return values - min(values),
+        If min(values) < 0, return values - min(values),
         otherwise return values.
 
         :param values: magnetic suscepetibility values
@@ -394,7 +396,7 @@ class MeasurementSet:
                 self.furnace, filename, self.real_vol, self.nom_vol)
         # self.make_zero_at_700()
 
-    def __init__(self, furnace, sample_dir, real_vol=0.25, nom_vol=10.):
+    def __init__(self, furnace, sample_dir, real_vol=0.25, nom_vol=10.0):
         self.oom = -6.  # order of magnitude
         self.name = os.path.basename(sample_dir)
         self.furnace = furnace
