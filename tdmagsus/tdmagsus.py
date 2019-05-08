@@ -28,28 +28,29 @@ susceptibility of the sample itself.
 import glob
 import os.path
 import re
+from typing import List, Optional, Tuple, Callable
 
 import numpy
-from numpy import array
+from numpy import array, ndarray
 from scipy.interpolate import UnivariateSpline
 
-line_pattern = re.compile(r'^ +\d')
-field_separator = re.compile(' +')
+line_pattern = re.compile(r"^ +\d")
+field_separator = re.compile(" +")
 
 
-def read_cur_file(filename):
+def read_cur_file(filename: str) ->\
+        Tuple[Tuple[ndarray, ndarray], Tuple[ndarray, ndarray]]:
     """Read a .CUR magnetic susceptibility file.
 
     :param filename: name of file to read
-    :type filename: str
-    :return: ((heating_temps, heating_mag_sus_values],
-       (cooling_temps, cooling_mag_sus_values])
-      This is a tuple of two tuples, each containing two numpy arrays.
+    :return: ((heating_temps, heating_mag_sus_values),
+       (cooling_temps, cooling_mag_sus_values))
+      This is a tuple of two tuples, each containing two ndarrays.
     """
 
     temperatures = []
     mag_suss = []
-    with open(filename, 'r') as infile:
+    with open(filename, "r") as infile:
         for line in infile:
             if line_pattern.match(line.rstrip()):
                 temperature, mag_sus = \
@@ -70,9 +71,9 @@ def read_cur_file(filename):
 
     cooling[0].reverse()
     cooling[1].reverse()
-    heating = (heating[0][1:], heating[1][1:],)
-    cooling = (cooling[0][1:], cooling[1][1:],)
-    return tuple(map(array, heating)), tuple(map(array, cooling))
+    heating = (array(heating[0][1:]), array(heating[1][1:]))
+    cooling = (array(cooling[0][1:]), array(cooling[1][1:]))
+    return heating, cooling
 
 
 class Furnace:
@@ -84,7 +85,8 @@ class Furnace:
     """
 
     @staticmethod
-    def extend_data(temps_mss):
+    def extend_data(temps_mss: Tuple[ndarray, ndarray]) \
+            -> Tuple[ndarray, ndarray]:
         """Pad data at ends to improve spline fit.
 
         Given ([T1, T2, T3, ... , Tn-1, Tn], [M1, M2, M3, ... , Mn-1, Mn]),
@@ -93,47 +95,51 @@ class Furnace:
 
         :param temps_mss: tuple of temperatures and mag sus values
         :return: same values, padded by two extra data points at each end
-
         """
         temps, mss = temps_mss
-        tlist = temps.tolist()
-        mlist = mss.tolist()
+        tlist = list(temps.tolist())
+        mlist = list(mss.tolist())
         tlist = [(tlist[0] - 20)] + [(tlist[0] - 10)] + \
             tlist + [tlist[-1] + 10] + [tlist[-1] + 20]
         mlist = [mlist[0]] + [mlist[0]] + \
             mlist + [mlist[-1]] + [mlist[-1]]
         return array(tlist), array(mlist)
 
-    def __init__(self, filename, smoothing=100):
+    def __init__(self, filename: str, smoothing: float = 100) -> None:
         """Initialize Furnace object from a CUR file.
 
         :param filename: file path from which to read furnace data
         :param smoothing: smoothing factor for spline curve
         """
         heat, cool = read_cur_file(filename)
-        self.heat_data, self.cool_data = map(Furnace.extend_data, (heat, cool))
+        self.heat_data = Furnace.extend_data(heat)
+        self.cool_data = Furnace.extend_data(cool)
         self.heat_spline = UnivariateSpline(*self.heat_data, s=smoothing)
         self.cool_spline = UnivariateSpline(*self.cool_data, s=smoothing)
 
-    def get_spline_data(self):
+    def get_spline_data(self) -> \
+            Tuple[Tuple[ndarray, ndarray], Tuple[ndarray, ndarray],
+                  Tuple[ndarray, ndarray], Tuple[ndarray, ndarray]]:
         """Return furnace temperature/M.S. data and spline approximations.
         
         This method is mainly intended for checking that the splines are
         doing a good job of smoothing the data.
 
         :return: (heating_data, heating_spline, cooling_data, cooling_spline).
-           Each element of this tuple is itself a 2-tuple containing a
-           list of temperatures and a list of associated M.S. values.
+           Each element of this tuple is itself a 2-tuple containing an
+           ndarray of temperatures and an ndarray of associated M.S. values.
         """
 
-        splinex = numpy.arange(20, 701)
-        spliney_heat = self.heat_spline(splinex)
-        spliney_cool = self.cool_spline(splinex)
-        return self.heat_data, (splinex, spliney_heat),\
-            self.cool_data, (splinex, spliney_cool)    
+        spline_x = numpy.arange(20, 701)
+        spline_y_heating = self.heat_spline(spline_x)
+        spline_y_cooling = self.cool_spline(spline_x)
+        return self.heat_data, (spline_x, spline_y_heating),\
+            self.cool_data, (spline_x, spline_y_cooling)
 
     @staticmethod
-    def correct_with_spline(temps, mss, spline):
+    def correct_with_spline(temps: List[float], mss: List[float],
+                            spline: Callable[[float], float])\
+            -> Tuple[List[float], ndarray]:
         """Correct susceptibility measurements using a supplied spline.
 
         :param temps: an array_like of temperatures
@@ -141,7 +147,7 @@ class Furnace:
                     taken at the specified temperatures
         :param spline: a function mapping a temperature to a furnace
                        susceptibility
-        :return: a 2-tuple containing temps and a corresponding series of
+        :return: a 2-tuple containing temperatures and a corresponding series of
                  corrected susceptibilities
         """
         mss_corrected = numpy.zeros_like(mss)
@@ -149,7 +155,7 @@ class Furnace:
             mss_corrected[i] = mss[i] - spline(temps[i])
         return temps, mss_corrected
 
-    def correct(self, heating, cooling):
+    def correct(self, heating: Tuple, cooling: Tuple) -> Tuple[Tuple, Tuple]:
         """Correct susceptibility measurements using these furnace measurements
 
         :param heating: a 2-tuple (temperatures, susceptibilities) of
@@ -169,7 +175,16 @@ class Furnace:
 class MeasurementCycle:
     """The results of a single heating-cooling run."""
 
-    def __init__(self, furnace, filename, real_vol=0.25, nom_vol=10.0):
+    def __init__(self, furnace: Furnace, filename: str,
+                 real_vol: float = 0.25, nom_vol: float = 10.0) -> None:
+        """Create a measurement cycle object from data in a specified file.
+
+        :param furnace: empty furnace correction
+        :param filename:
+        :param real_vol:
+        :param nom_vol:
+        """
+
         self.furnace = furnace
         self.real_vol = real_vol
         self.nom_vol = nom_vol
@@ -180,11 +195,10 @@ class MeasurementCycle:
         cooling = (cooling[0], self.correct_for_volume(cooling[1]))
         self.data = (heating, cooling)
 
-    def write_csv(self, filename):
+    def write_csv(self, filename: str) -> None:
         """Write furnace-corrected data to a CSV file.
 
         :param filename: name of file to write to.
-        :type filename: str
         """
 
         cooling = (list(reversed(self.data[1][0])),
@@ -196,13 +210,14 @@ class MeasurementCycle:
                     fh.write("%.2f,%.2f\n" % (pair[0], pair[1]))
 
     @staticmethod
-    def chop_data(temps_mss, min_temp, max_temp):
+    def chop_data(temps_mss: Tuple[ndarray, ndarray], min_temp: float,
+                  max_temp: float) -> Tuple[ndarray, ndarray]:
         """Truncate data to a given temperature range.
 
         :param temps_mss: a 2-tuple of lists, (temperatures, susceptibilites)
         :param min_temp: minimum temperature for truncation
         :param max_temp: maximum remperature for truncation
-        :return: a 2-tuple of lists, (temperatures, susceptibilities), where
+        :return: a 2-tuple of ndarrays, (temperatures, susceptibilities), where
                  all temperatures are in the range (min_temp, max_temp)
         """
         temps, mss = temps_mss
@@ -216,7 +231,7 @@ class MeasurementCycle:
         return array(temps_out), array(mss_out)
 
     @staticmethod
-    def linear_fit(xs, ys):
+    def linear_fit(xs: ndarray, ys: ndarray) -> Tuple[numpy.poly1d, float]:
         """Make a least-squares linear fit to a 2-dimensional data set.
 
         This method also calculates and returns the r-squared value associated
@@ -230,12 +245,14 @@ class MeasurementCycle:
         poly = numpy.poly1d(fit.tolist())
         model_ys = poly(xs)
         mean_y = numpy.mean(ys)
-        sserr = numpy.sum((ys - model_ys)**2)
-        sstot = numpy.sum((ys - mean_y)**2)
+        sserr = numpy.sum((ys - model_ys) ** 2)
+        sstot = numpy.sum((ys - mean_y) ** 2)
         rsquared = 1 - sserr / sstot
-        return poly, rsquared
+        # rsquared is already a float; the "conversion" is to help type checkers
+        return poly, float(rsquared)
 
-    def curie_paramag(self, min_temp, max_temp):
+    def curie_paramag(self, min_temp: float, max_temp: float)\
+            -> Tuple[float, float, numpy.poly1d]:
         """Estimate Curie temperature by linear fit to inverse susceptibility.
 
         :param min_temp: minimum of temperature range for fit
@@ -248,11 +265,12 @@ class MeasurementCycle:
 
         temps, mss = \
             MeasurementCycle.chop_data(self.data[0], min_temp, max_temp)
-        poly, rsquared = MeasurementCycle.linear_fit(temps, 1./mss)
+        poly, rsquared = MeasurementCycle.linear_fit(temps, 1. / mss)
         curie = poly.r[0]  # x axis intercept
         return curie, rsquared, poly
 
-    def curie_inflection(self, min_temp, max_temp):
+    def curie_inflection(self, min_temp: float, max_temp: float)\
+            -> Tuple[float, UnivariateSpline]:
         """Estimate Curie temperature by inflection point.
         
         Estimate Curie point by determining the inflection point of
@@ -285,14 +303,14 @@ class MeasurementCycle:
         # The root of the 2nd-derivative spline gives the inflection point.
         return spline2.roots()[0], spline
 
-    def alteration_index(self):
+    def alteration_index(self) -> float:
         """Return the alteration index for this cycle.
 
         :return: the alteration idex for this cycle
         """
         return self.data[0][1][0] - self.data[1][1][0]
 
-    def correct_for_volume(self, data):
+    def correct_for_volume(self, data: ndarray) -> ndarray:
         """Correct supplied data for volume.
 
         The volume correction factor is (nominal_volume / real_volume). The
@@ -303,10 +321,10 @@ class MeasurementCycle:
                  volume correction factor
         """
         scale = self.nom_vol / self.real_vol
-        return [scale * datum for datum in data]
+        return array([scale * datum for datum in data])
 
     @staticmethod
-    def shunt_up(values):
+    def shunt_up(values: List[float]) -> List[float]:
         """Ensure that a list of scalars is non-negative.
         
         If min(values) < 0, return values - min(values),
@@ -328,7 +346,10 @@ class MeasurementSet:
     """The results of a series of heating-cooling cycles on a single sample."""
 
     @staticmethod
-    def shunt(heat_cool, offset):
+    def shunt(heat_cool: Tuple[Tuple[List[float], List[float]],
+                               Tuple[List[float], List[float]]], offset: float)\
+            -> Tuple[Tuple[List[float], List[float]],
+                     Tuple[List[float], List[float]]]:
         """Offset all magnetic susceptibility values by a supplied value.
 
         :param heat_cool: ((heating_temps, heating_susceptibilities),
@@ -342,8 +363,9 @@ class MeasurementSet:
         cool_s = (cool[0], [m + offset for m in cool[1]])
         return heat_s, cool_s
 
-    def make_zero_at_700(self):
+    def make_zero_at_700(self) -> None:
         """Correct values for a zero susceptibility at/near 700 degrees"""
+
         print(self.name, self.cycles.keys(), self.cycles[700][0][1][:5])
         offset = -min(self.cycles[700][0][1][-5:])
         new_data = {}
@@ -352,7 +374,7 @@ class MeasurementSet:
         self.cycles = new_data
 
     @staticmethod
-    def filename_to_temp(filename):
+    def filename_to_temp(filename: str) -> Optional[int]:
         """Convert a filename to a temperature.
 
         Extracts a temperature from a numeric filename with a .CUR suffix.
@@ -360,15 +382,16 @@ class MeasurementSet:
         e.g. "700.CUR" -> 700, "350B.CUR" -> 350
 
         :param filename: a filename containing a temperature
-        :return: the temperature represented by the filename
+        :return: the temperature represented by the filename, or None if the
+          filename does not represent a temperature
         """
         leafname = os.path.basename(filename)
-        m = re.search(r'^(\d+)[AB]?\.CUR$', leafname)
+        m = re.search(r"^(\d+)[AB]?\.CUR$", leafname)
         if m is None:
             return None
         return int(m.group(1))
 
-    def set_oom(self, new_oom):
+    def set_oom(self, new_oom: int) -> None:
         """Change this measurement set's order of magnitude.
 
         :param new_oom: the new order of magnitude
@@ -382,10 +405,10 @@ class MeasurementSet:
         self.cycles = new_data
         self.oom = new_oom
 
-    def read_files(self, sample_dir):
+    def read_files(self, sample_dir: str) -> None:
         """Read a directory of files into this measurement set.
 
-        :param sample_dir: directory containing CUR files
+        :param sample_dir: path of directory containing CUR files
         """
         cur_files = glob.glob(os.path.join(sample_dir, "*.CUR"))
         for filename in cur_files:
@@ -394,9 +417,16 @@ class MeasurementSet:
                 continue
             self.cycles[temperature] = MeasurementCycle(
                 self.furnace, filename, self.real_vol, self.nom_vol)
-        # self.make_zero_at_700()
 
-    def __init__(self, furnace, sample_dir, real_vol=0.25, nom_vol=10.0):
+    def __init__(self, furnace: Furnace, sample_dir: str,
+                 real_vol: float = 0.25, nom_vol: float = 10.0) -> None:
+        """Create a measurement set from data in a specified directory.
+
+        :param furnace: empty furnace data
+        :param sample_dir: directory from which to read samples
+        :param real_vol: real sample volume (cm³)
+        :param nom_vol: nominal sample volume (cm³)
+        """
         self.oom = -6.  # order of magnitude
         self.name = os.path.basename(sample_dir)
         self.furnace = furnace
@@ -407,8 +437,8 @@ class MeasurementSet:
             self.read_files(sample_dir)
 
     @staticmethod
-    def alterations(cycles):
-        """Calculate alteration indices for a list of cycles
+    def alterations(cycles: List[MeasurementCycle]) -> List[float]:
+        """Calculate alteration indices for a list of cycles.
 
         :param cycles: a list of MeasurementCycles
         :return: a corresponding list of alteration indices
