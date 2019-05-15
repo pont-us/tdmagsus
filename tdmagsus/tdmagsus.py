@@ -214,6 +214,11 @@ class MeasurementCycle:
                   max_temp: float) -> Tuple[ndarray, ndarray]:
         """Truncate data to a given temperature range.
 
+        Any temperature falling outside the specified range will be excluded
+        from the returned temperature array, and its corresponding
+        susceptibility value will be excluded from the returned susceptibility
+        array.
+
         :param temps_mss: a 2-tuple of lists, (temperatures, susceptibilites)
         :param min_temp: minimum temperature for truncation
         :param max_temp: maximum remperature for truncation
