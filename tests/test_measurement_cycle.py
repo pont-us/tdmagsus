@@ -7,7 +7,7 @@ import unittest
 
 
 class TestMeasurementCycle(unittest.TestCase):
-    """Basic test cases."""
+    """Tests for the MeasurementCycle class"""
 
     def test_chop_data(self):
         input_temps = array([0, 20, 40, 60, 80, 70, 50, 30, 10])
