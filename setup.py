@@ -9,7 +9,7 @@ with open(os.path.join(cwd, "README.rst")) as fh:
     long_desc = fh.read()
 
 setup(name="tdmagsus",
-      version="1.0.0",
+      version="1.0.2",
       description=
       "Manipulation of temperature-dependent magnetic susceptibility data",
       long_description_content_type="text/x-rst",
