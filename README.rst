@@ -15,7 +15,7 @@ furnace (i.e. the measurement apparatus without a sample). It allows a "raw"
 set of sample measurements to be corrected to remove the effects of the
 changes in the susceptibility of the equipment itself. A ``Furnace`` object is
 created from a ``.CUR`` file produced from a measurement run with no sample.
-Since measuremed data is frequently noisy, ``Furnace`` provides methods for
+Since measured data is frequently noisy, ``Furnace`` provides methods for
 smoothing the data with a spline before it is used for corrections.
 
 ``MeasurementCycle`` represents the temperature-susceptibility behaviour of a
